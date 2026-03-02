@@ -1,5 +1,5 @@
 // 贵金属行情中心 - 主应用程序
-// 版本：使用韭菜盒子同款数据源
+// 版本：使用金投网 API + 修复时间显示和股票名称
 
 // A 股数据配置（新浪财经 API）
 const STOCK_CONFIG = {
@@ -28,6 +28,7 @@ const REFRESH_INTERVAL = 5000;
 let lastUpdateTime = null;
 let countdownTimer = null;
 let autoRefreshTimer = null;
+let realtimeTimer = null;
 
 // 工具函数
 const formatNumber = (num, decimals = 2) => {
@@ -48,9 +49,27 @@ const formatTime = (date) => {
     });
 };
 
+const formatDate = (date) => {
+    return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+};
+
 const updateLastUpdateTime = () => {
     lastUpdateTime = new Date();
-    document.getElementById('lastUpdate').textContent = `最后更新：${formatTime(lastUpdateTime)}`;
+    document.getElementById('lastUpdate').textContent = `最后更新：${formatDate(lastUpdateTime)} ${formatTime(lastUpdateTime)}`;
+};
+
+// 实时时钟
+const startRealtimeClock = () => {
+    const updateTimeDisplay = () => {
+        const now = new Date();
+        document.getElementById('lastUpdate').textContent = `最后更新：${formatDate(now)} ${formatTime(now)}`;
+    };
+    updateTimeDisplay();
+    realtimeTimer = setInterval(updateTimeDisplay, 1000);
 };
 
 const updateCountdown = () => {
@@ -69,176 +88,91 @@ const updateCountdown = () => {
     countdownTimer = setInterval(updateDisplay, 1000);
 };
 
-// ==================== 贵金属数据获取（使用新浪财经 API）====================
+// ==================== 贵金属数据获取（使用金投网 API）====================
 
-// 获取贵金属数据（新浪财经国际期货 API）
+// 获取贵金属数据（金投网 API）
 const fetchPreciousMetals = async () => {
-    // 使用新浪财经国际期货接口
-    // hf_SILVER = 白银，hf_GOLD = 黄金，hf_COPPER = 铜
-    const codes = ['hf_SILVER', 'hf_GOLD', 'hf_COPPER'];
+    // 金投网 API 接口
+    const goldUrl = 'https://quote.cngold.org/gjsjs/hqjson?code=XAUGD&rn=' + Math.random();
+    const silverUrl = 'https://quote.cngold.org/gjsjs/hqjson?code=XAGGD&rn=' + Math.random();
+    const copperUrl = 'https://quote.cngold.org/yousejinshu/hqjson?code=LME3&rn=' + Math.random();
     
-    return new Promise((resolve) => {
-        const script = document.createElement('script');
-        const callbackName = 'hq_str_hf_metals';
+    try {
+        const [goldData, silverData, copperData] = await Promise.all([
+            fetchCngoldData(goldUrl, 'gold'),
+            fetchCngoldData(silverUrl, 'silver'),
+            fetchCngoldData(copperUrl, 'copper')
+        ]);
         
-        // 设置超时
-        const timeout = setTimeout(() => {
-            if (script.parentNode) {
-                document.body.removeChild(script);
-            }
-            resolve(getMockPreciousMetals());
-        }, 5000);
-        
-        // 全局回调函数
-        window[callbackName] = function() {
-            clearTimeout(timeout);
-            if (script.parentNode) {
-                document.body.removeChild(script);
-            }
-            delete window[callbackName];
-            
-            try {
-                const result = parsePreciousMetalsData();
-                resolve(result);
-            } catch (e) {
-                console.log('解析贵金属数据失败:', e);
-                resolve(getMockPreciousMetals());
-            }
+        return {
+            gold: goldData,
+            silver: silverData,
+            copper: copperData
         };
-        
-        // 加载脚本 - 使用新浪财经国际期货 API
-        script.src = `https://hq.sinajs.cn/list=${codes.join(',')}`;
-        document.body.appendChild(script);
-    });
-};
-
-// 解析贵金属数据
-const parsePreciousMetalsData = () => {
-    const metals = {};
-    
-    // 黄金 (hf_GOLD)
-    if (window.hq_str_hf_GOLD) {
-        const data = parseSinaHQData(window.hq_str_hf_GOLD, '黄金');
-        if (data) {
-            // 转换为人民币/克
-            const priceUSD = data.price;
-            const priceCNY = priceUSD * 7.25 / 31.1035; // 汇率 * 盎司转克
-            const prevClose = data.yestclose;
-            const prevCloseCNY = prevClose * 7.25 / 31.1035;
-            
-            metals.gold = {
-                price: priceCNY,
-                change: {
-                    amount: priceCNY - prevCloseCNY,
-                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
-                },
-                unit: '元/克',
-                source: 'COMEX 黄金'
-            };
-        }
-    }
-    
-    // 白银 (hf_SILVER)
-    if (window.hq_str_hf_SILVER) {
-        const data = parseSinaHQData(window.hq_str_hf_SILVER, '白银');
-        if (data) {
-            const priceUSD = data.price;
-            const priceCNY = priceUSD * 7.25 / 31.1035;
-            const prevClose = data.yestclose;
-            const prevCloseCNY = prevClose * 7.25 / 31.1035;
-            
-            metals.silver = {
-                price: priceCNY,
-                change: {
-                    amount: priceCNY - prevCloseCNY,
-                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
-                },
-                unit: '元/克',
-                source: 'COMEX 白银'
-            };
-        }
-    }
-    
-    // 铜 (hf_COPPER)
-    if (window.hq_str_hf_COPPER) {
-        const data = parseSinaHQData(window.hq_str_hf_COPPER, '铜');
-        if (data) {
-            // LME 铜价单位是美元/吨，转换为元/克
-            const priceUSD = data.price;
-            const priceCNY = (priceUSD * 7.25) / 1000000;
-            const prevClose = data.yestclose;
-            const prevCloseCNY = (prevClose * 7.25) / 1000000;
-            
-            metals.copper = {
-                price: priceCNY,
-                change: {
-                    amount: priceCNY - prevCloseCNY,
-                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
-                },
-                unit: '元/克',
-                source: 'LME 铜'
-            };
-        }
-    }
-    
-    // 如果没有获取到数据，使用模拟数据
-    if (!metals.gold || !metals.silver || !metals.copper) {
+    } catch (error) {
+        console.error('获取贵金属数据失败:', error);
         return getMockPreciousMetals();
     }
-    
-    return metals;
 };
 
-// 解析新浪财经数据格式
-const parseSinaHQData = (dataStr, name) => {
-    if (!dataStr) return null;
+// 获取金投网数据
+const fetchCngoldData = async (url, type) => {
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data && data.list && data.list.length > 0) {
+            const item = data.list[0];
+            const price = parseFloat(item.price) || 0;
+            const openPrice = parseFloat(item.open || item.yestclose || price) || price;
+            
+            if (price > 0) {
+                return {
+                    price: price,
+                    change: {
+                        amount: price - openPrice,
+                        percent: ((price - openPrice) / openPrice) * 100
+                    },
+                    unit: '元/克',
+                    source: '金投网',
+                    time: item.time || ''
+                };
+            }
+        }
+    } catch (e) {
+        console.log(`${type} API 失败:`, e.message);
+    }
     
-    const parts = dataStr.split(',');
-    if (parts.length < 10) return null;
-    
-    // 国际期货数据格式：
-    // 名称，当前价，开盘价，昨收价，最高价，最低价，...
-    return {
-        name: parts[0],
-        price: parseFloat(parts[1]) || 0,
-        open: parseFloat(parts[2]) || 0,
-        yestclose: parseFloat(parts[3]) || 0,
-        high: parseFloat(parts[4]) || 0,
-        low: parseFloat(parts[5]) || 0
-    };
+    // 备用模拟数据
+    return getMockPreciousMetal(type);
 };
 
 // 获取模拟贵金属数据（备用）
 const getMockPreciousMetals = () => {
-    // 基于近期真实价格的模拟数据
     return {
-        gold: {
-            price: 485.50 + (Math.random() - 0.5) * 5,
-            change: {
-                amount: (Math.random() - 0.5) * 3,
-                percent: (Math.random() - 0.5) * 0.6
-            },
-            unit: '元/克',
-            source: '参考数据'
+        gold: getMockPreciousMetal('gold'),
+        silver: getMockPreciousMetal('silver'),
+        copper: getMockPreciousMetal('copper')
+    };
+};
+
+const getMockPreciousMetal = (type) => {
+    const basePrices = {
+        gold: 625.50,
+        silver: 7.85,
+        copper: 0.0695
+    };
+    const basePrice = basePrices[type] || 100;
+    const fluctuation = (Math.random() - 0.5) * (basePrice * 0.02);
+    
+    return {
+        price: basePrice + fluctuation,
+        change: {
+            amount: fluctuation,
+            percent: (fluctuation / basePrice) * 100
         },
-        silver: {
-            price: 6.35 + (Math.random() - 0.5) * 0.2,
-            change: {
-                amount: (Math.random() - 0.5) * 0.1,
-                percent: (Math.random() - 0.5) * 1.5
-            },
-            unit: '元/克',
-            source: '参考数据'
-        },
-        copper: {
-            price: 0.0618 + (Math.random() - 0.5) * 0.001,
-            change: {
-                amount: (Math.random() - 0.5) * 0.0005,
-                percent: (Math.random() - 0.5) * 0.8
-            },
-            unit: '元/克',
-            source: '参考数据'
-        }
+        unit: '元/克',
+        source: '参考数据'
     };
 };
 
@@ -306,7 +240,7 @@ const renderPreciousMetals = (data) => {
 // ==================== A 股数据获取（新浪财经 API）====================
 
 // 获取单个股票数据（新浪财经 API）
-const fetchStockQuote = async (code) => {
+const fetchStockQuote = async (code, defaultName) => {
     return new Promise((resolve) => {
         const script = document.createElement('script');
         
@@ -320,25 +254,30 @@ const fetchStockQuote = async (code) => {
         
         // 全局回调函数
         const callbackName = 'hq_str_' + code.replace('sh', '').replace('sz', '');
+        
+        // 检查是否已存在
+        if (window[callbackName]) {
+            delete window[callbackName];
+        }
+        
         window[callbackName] = function() {
             clearTimeout(timeout);
             if (script.parentNode) {
                 document.body.removeChild(script);
             }
-            delete window[callbackName];
             
             const dataStr = window[callbackName];
+            delete window[callbackName];
+            
             if (dataStr && typeof dataStr === 'string') {
                 const parts = dataStr.split(',');
                 if (parts.length >= 32) {
-                    const name = parts[0];
+                    const name = parts[0] || defaultName;
                     const currentPrice = parseFloat(parts[3]) || 0;
                     const previousClose = parseFloat(parts[2]) || currentPrice;
                     const open = parseFloat(parts[1]) || currentPrice;
-                    const high = parseFloat(parts[4]) || 0;
-                    const low = parseFloat(parts[5]) || 0;
                     
-                    if (currentPrice > 0) {
+                    if (currentPrice > 0 && previousClose > 0) {
                         resolve({
                             code: code.replace('sh', '').replace('sz', ''),
                             name: name,
@@ -347,9 +286,7 @@ const fetchStockQuote = async (code) => {
                                 amount: currentPrice - previousClose,
                                 percent: ((currentPrice - previousClose) / previousClose) * 100
                             },
-                            open: open,
-                            high: high,
-                            low: low
+                            open: open
                         });
                         return;
                     }
@@ -369,24 +306,24 @@ const fetchStockData = async () => {
     // 获取指数数据
     const indices = [];
     for (const index of STOCK_CONFIG.indices) {
-        const data = await fetchStockQuote(index.code);
-        if (data) {
+        const data = await fetchStockQuote(index.code, index.name);
+        if (data && data.price > 0) {
             indices.push(data);
         } else {
             // 备用模拟数据
-            indices.push(generateMockIndexData(index.code));
+            indices.push(generateMockIndexData(index.code, index.name));
         }
     }
     
     // 获取个股数据
     const stocks = [];
     for (const stock of STOCK_CONFIG.stocks) {
-        const data = await fetchStockQuote(stock.code);
-        if (data) {
+        const data = await fetchStockQuote(stock.code, stock.name);
+        if (data && data.price > 0) {
             stocks.push(data);
         } else {
             // 备用模拟数据
-            stocks.push(generateMockStockData(stock.code));
+            stocks.push(generateMockStockData(stock.code, stock.name));
         }
     }
     
@@ -394,7 +331,7 @@ const fetchStockData = async () => {
 };
 
 // 生成模拟指数数据（备用）
-const generateMockIndexData = (code) => {
+const generateMockIndexData = (code, name) => {
     const mockData = {
         'sh000001': { name: '上证指数', base: 3250 },
         'sz399001': { name: '深证成指', base: 10200 },
@@ -402,7 +339,7 @@ const generateMockIndexData = (code) => {
         'sh000300': { name: '沪深 300', base: 3800 }
     };
     
-    const info = mockData[code] || { name: '未知指数', base: 3000 };
+    const info = mockData[code] || { name: name || '未知指数', base: 3000 };
     const changePercent = (Math.random() - 0.5) * 2;
     const changeAmount = info.base * (changePercent / 100);
     
@@ -418,7 +355,7 @@ const generateMockIndexData = (code) => {
 };
 
 // 生成模拟个股数据（备用）
-const generateMockStockData = (code) => {
+const generateMockStockData = (code, name) => {
     const mockData = {
         '600547': { name: '山东黄金', base: 26.5 },
         '601899': { name: '紫金矿业', base: 16.8 },
@@ -428,7 +365,7 @@ const generateMockStockData = (code) => {
         '600489': { name: '中金黄金', base: 23.8 }
     };
     
-    const info = mockData[code] || { name: '未知股票', base: 10 };
+    const info = mockData[code] || { name: name || '未知股票', base: 10 };
     const changePercent = (Math.random() - 0.5) * 4;
     const changeAmount = info.base * (changePercent / 100);
     
@@ -469,7 +406,7 @@ const renderStockCard = (stock) => {
     return `
         <div class="card">
             <div class="card-header">
-                <span class="card-title">${stock.name}</span>
+                <span class="card-title">${stock.name || '--'}</span>
                 <span class="card-symbol">${stock.code}</span>
             </div>
             <div class="price ${priceClass}">
@@ -519,7 +456,7 @@ const refreshAll = async () => {
     const stockData = await fetchStockData();
     renderStockData(stockData);
     
-    // 更新时间
+    // 更新时间（带日期）
     updateLastUpdateTime();
 };
 
@@ -528,10 +465,13 @@ const init = () => {
     // 立即刷新一次
     refreshAll();
     
+    // 启动实时时钟（每秒更新时间）
+    startRealtimeClock();
+    
     // 启动倒计时
     updateCountdown();
     
-    // 设置自动刷新
+    // 设置自动刷新（每 5 秒）
     autoRefreshTimer = setInterval(refreshAll, REFRESH_INTERVAL);
     
     // 绑定手动刷新按钮
@@ -556,9 +496,11 @@ document.addEventListener('visibilitychange', () => {
         // 页面隐藏时暂停刷新
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         if (countdownTimer) clearInterval(countdownTimer);
+        if (realtimeTimer) clearInterval(realtimeTimer);
     } else {
         // 页面显示时恢复刷新
         refreshAll();
+        startRealtimeClock();
         updateCountdown();
         autoRefreshTimer = setInterval(refreshAll, REFRESH_INTERVAL);
     }
