@@ -1,12 +1,5 @@
 // 贵金属行情中心 - 主应用程序
-// 版本：使用真实 API 数据源
-
-// 汇率配置（USD 转 CNY）
-let USD_TO_CNY_RATE = 7.25;
-
-// 贵金属单位转换
-// 黄金/白银：1 金衡盎司 (oz) = 31.1035 克
-const OZ_TO_GRAM = 31.1035;
+// 版本：使用韭菜盒子同款数据源
 
 // A 股数据配置（新浪财经 API）
 const STOCK_CONFIG = {
@@ -76,203 +69,177 @@ const updateCountdown = () => {
     countdownTimer = setInterval(updateDisplay, 1000);
 };
 
-// ==================== 贵金属数据获取 ====================
+// ==================== 贵金属数据获取（使用新浪财经 API）====================
 
-// 获取黄金价格（使用多个真实数据源）
-const fetchGoldPrice = async () => {
-    // 方案 1: 使用金投网 API（国内金价，直接返回人民币/克）
-    try {
-        // 金投网 API - 黄金现货
-        const response = await fetch('https://quote.cngold.org/gjsjs/hqjson?code=XAUGD&rn=' + Math.random(), {
-            mode: 'cors'
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data && data.list && data.list.length > 0) {
-                const item = data.list[0];
-                const price = parseFloat(item.price);
-                const openPrice = parseFloat(item.open || item.yestclose || price);
-                
-                if (price > 0 && !isNaN(price)) {
-                    return {
-                        price: price,
-                        change: {
-                            amount: price - openPrice,
-                            percent: ((price - openPrice) / openPrice) * 100
-                        },
-                        unit: '元/克',
-                        source: '金投网'
-                    };
-                }
-            }
-        }
-    } catch (e) {
-        console.log('金投网 API 失败:', e.message);
-    }
-    
-    // 方案 2: 使用国际 API 并转换
-    try {
-        const response = await fetch('https://api.gold-api.com/price/XAU');
-        const data = await response.json();
-        
-        if (data && data.price && data.price > 0) {
-            const priceUSD = data.price;
-            const priceCNY = priceUSD * USD_TO_CNY_RATE / OZ_TO_GRAM;
-            const previousClose = data.previousClose || priceUSD * 0.995;
-            
-            return {
-                price: priceCNY,
-                change: {
-                    amount: (priceUSD - previousClose) * USD_TO_CNY_RATE / OZ_TO_GRAM,
-                    percent: ((priceUSD - previousClose) / previousClose) * 100
-                },
-                unit: '元/克',
-                source: '国际金价'
-            };
-        }
-    } catch (e) {
-        console.log('国际 API 失败:', e.message);
-    }
-    
-    // 方案 3: 使用模拟数据（基于近期真实金价）
-    const basePrice = 485.50; // 近期真实金价
-    const fluctuation = (Math.random() - 0.5) * 5;
-    return {
-        price: basePrice + fluctuation,
-        change: {
-            amount: fluctuation,
-            percent: (fluctuation / basePrice) * 100
-        },
-        unit: '元/克',
-        source: '参考数据'
-    };
-};
-
-// 获取白银价格
-const fetchSilverPrice = async () => {
-    try {
-        const response = await fetch('https://api.gold-api.com/price/XAG');
-        const data = await response.json();
-        
-        if (data && data.price && data.price > 0) {
-            const priceUSD = data.price;
-            const priceCNY = priceUSD * USD_TO_CNY_RATE / OZ_TO_GRAM;
-            const previousClose = data.previousClose || priceUSD * 0.995;
-            
-            return {
-                price: priceCNY,
-                change: {
-                    amount: (priceUSD - previousClose) * USD_TO_CNY_RATE / OZ_TO_GRAM,
-                    percent: ((priceUSD - previousClose) / previousClose) * 100
-                },
-                unit: '元/克',
-                source: '国际银价'
-            };
-        }
-    } catch (e) {
-        console.log('白银 API 失败:', e.message);
-    }
-    
-    // 备用：模拟数据（基于近期真实银价）
-    const basePrice = 6.35;
-    const fluctuation = (Math.random() - 0.5) * 0.2;
-    return {
-        price: basePrice + fluctuation,
-        change: {
-            amount: fluctuation,
-            percent: (fluctuation / basePrice) * 100
-        },
-        unit: '元/克',
-        source: '参考数据'
-    };
-};
-
-// 获取铜价格
-const fetchCopperPrice = async () => {
-    try {
-        // 长江有色金属网 API（可能需要代理）
-        const response = await fetch('https://quote.cngold.org/yousejinshu/hqjson?code=LME3&rn=' + Math.random(), {
-            mode: 'cors'
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data && data.list && data.list.length > 0) {
-                const item = data.list[0];
-                const priceUSD = parseFloat(item.price);
-                
-                if (priceUSD > 0) {
-                    // LME 铜价单位是 USD/吨，转换为元/克
-                    const priceCNY = (priceUSD * USD_TO_CNY_RATE) / 1000000;
-                    const openPrice = parseFloat(item.open || item.yestclose || priceUSD);
-                    
-                    return {
-                        price: priceCNY,
-                        change: {
-                            amount: ((priceUSD - openPrice) * USD_TO_CNY_RATE) / 1000000,
-                            percent: ((priceUSD - openPrice) / openPrice) * 100
-                        },
-                        unit: '元/克',
-                        source: 'LME 铜'
-                    };
-                }
-            }
-        }
-    } catch (e) {
-        console.log('铜 API 失败:', e.message);
-    }
-    
-    // 备用：模拟数据（基于近期真实铜价）
-    const basePriceUSD = 8500; // USD/吨
-    const fluctuation = (Math.random() - 0.5) * 150;
-    const priceUSD = basePriceUSD + fluctuation;
-    const priceCNY = (priceUSD * USD_TO_CNY_RATE) / 1000000;
-    
-    return {
-        price: priceCNY,
-        change: {
-            amount: (fluctuation * USD_TO_CNY_RATE) / 1000000,
-            percent: (fluctuation / basePriceUSD) * 100
-        },
-        unit: '元/克',
-        source: '参考数据'
-    };
-};
-
-// 获取汇率
-const fetchExchangeRate = async () => {
-    try {
-        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-        const data = await response.json();
-        if (data && data.rates && data.rates.CNY) {
-            USD_TO_CNY_RATE = data.rates.CNY;
-            return true;
-        }
-    } catch (e) {
-        console.log('汇率 API 失败:', e.message);
-    }
-    return false;
-};
-
-// 贵金属数据获取
+// 获取贵金属数据（新浪财经国际期货 API）
 const fetchPreciousMetals = async () => {
-    try {
-        // 先获取汇率
-        await fetchExchangeRate();
+    // 使用新浪财经国际期货接口
+    // hf_SILVER = 白银，hf_GOLD = 黄金，hf_COPPER = 铜
+    const codes = ['hf_SILVER', 'hf_GOLD', 'hf_COPPER'];
+    
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        const callbackName = 'hq_str_hf_metals';
         
-        // 并行获取所有贵金属价格
-        const [gold, silver, copper] = await Promise.all([
-            fetchGoldPrice(),
-            fetchSilverPrice(),
-            fetchCopperPrice()
-        ]);
+        // 设置超时
+        const timeout = setTimeout(() => {
+            if (script.parentNode) {
+                document.body.removeChild(script);
+            }
+            resolve(getMockPreciousMetals());
+        }, 5000);
         
-        return { gold, silver, copper };
-    } catch (error) {
-        console.error('获取贵金属数据失败:', error);
-        return null;
+        // 全局回调函数
+        window[callbackName] = function() {
+            clearTimeout(timeout);
+            if (script.parentNode) {
+                document.body.removeChild(script);
+            }
+            delete window[callbackName];
+            
+            try {
+                const result = parsePreciousMetalsData();
+                resolve(result);
+            } catch (e) {
+                console.log('解析贵金属数据失败:', e);
+                resolve(getMockPreciousMetals());
+            }
+        };
+        
+        // 加载脚本 - 使用新浪财经国际期货 API
+        script.src = `https://hq.sinajs.cn/list=${codes.join(',')}`;
+        document.body.appendChild(script);
+    });
+};
+
+// 解析贵金属数据
+const parsePreciousMetalsData = () => {
+    const metals = {};
+    
+    // 黄金 (hf_GOLD)
+    if (window.hq_str_hf_GOLD) {
+        const data = parseSinaHQData(window.hq_str_hf_GOLD, '黄金');
+        if (data) {
+            // 转换为人民币/克
+            const priceUSD = data.price;
+            const priceCNY = priceUSD * 7.25 / 31.1035; // 汇率 * 盎司转克
+            const prevClose = data.yestclose;
+            const prevCloseCNY = prevClose * 7.25 / 31.1035;
+            
+            metals.gold = {
+                price: priceCNY,
+                change: {
+                    amount: priceCNY - prevCloseCNY,
+                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
+                },
+                unit: '元/克',
+                source: 'COMEX 黄金'
+            };
+        }
     }
+    
+    // 白银 (hf_SILVER)
+    if (window.hq_str_hf_SILVER) {
+        const data = parseSinaHQData(window.hq_str_hf_SILVER, '白银');
+        if (data) {
+            const priceUSD = data.price;
+            const priceCNY = priceUSD * 7.25 / 31.1035;
+            const prevClose = data.yestclose;
+            const prevCloseCNY = prevClose * 7.25 / 31.1035;
+            
+            metals.silver = {
+                price: priceCNY,
+                change: {
+                    amount: priceCNY - prevCloseCNY,
+                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
+                },
+                unit: '元/克',
+                source: 'COMEX 白银'
+            };
+        }
+    }
+    
+    // 铜 (hf_COPPER)
+    if (window.hq_str_hf_COPPER) {
+        const data = parseSinaHQData(window.hq_str_hf_COPPER, '铜');
+        if (data) {
+            // LME 铜价单位是美元/吨，转换为元/克
+            const priceUSD = data.price;
+            const priceCNY = (priceUSD * 7.25) / 1000000;
+            const prevClose = data.yestclose;
+            const prevCloseCNY = (prevClose * 7.25) / 1000000;
+            
+            metals.copper = {
+                price: priceCNY,
+                change: {
+                    amount: priceCNY - prevCloseCNY,
+                    percent: ((priceCNY - prevCloseCNY) / prevCloseCNY) * 100
+                },
+                unit: '元/克',
+                source: 'LME 铜'
+            };
+        }
+    }
+    
+    // 如果没有获取到数据，使用模拟数据
+    if (!metals.gold || !metals.silver || !metals.copper) {
+        return getMockPreciousMetals();
+    }
+    
+    return metals;
+};
+
+// 解析新浪财经数据格式
+const parseSinaHQData = (dataStr, name) => {
+    if (!dataStr) return null;
+    
+    const parts = dataStr.split(',');
+    if (parts.length < 10) return null;
+    
+    // 国际期货数据格式：
+    // 名称，当前价，开盘价，昨收价，最高价，最低价，...
+    return {
+        name: parts[0],
+        price: parseFloat(parts[1]) || 0,
+        open: parseFloat(parts[2]) || 0,
+        yestclose: parseFloat(parts[3]) || 0,
+        high: parseFloat(parts[4]) || 0,
+        low: parseFloat(parts[5]) || 0
+    };
+};
+
+// 获取模拟贵金属数据（备用）
+const getMockPreciousMetals = () => {
+    // 基于近期真实价格的模拟数据
+    return {
+        gold: {
+            price: 485.50 + (Math.random() - 0.5) * 5,
+            change: {
+                amount: (Math.random() - 0.5) * 3,
+                percent: (Math.random() - 0.5) * 0.6
+            },
+            unit: '元/克',
+            source: '参考数据'
+        },
+        silver: {
+            price: 6.35 + (Math.random() - 0.5) * 0.2,
+            change: {
+                amount: (Math.random() - 0.5) * 0.1,
+                percent: (Math.random() - 0.5) * 1.5
+            },
+            unit: '元/克',
+            source: '参考数据'
+        },
+        copper: {
+            price: 0.0618 + (Math.random() - 0.5) * 0.001,
+            change: {
+                amount: (Math.random() - 0.5) * 0.0005,
+                percent: (Math.random() - 0.5) * 0.8
+            },
+            unit: '元/克',
+            source: '参考数据'
+        }
+    };
 };
 
 // 渲染贵金属卡片
@@ -336,31 +303,33 @@ const renderPreciousMetals = (data) => {
     `;
 };
 
-// ==================== A 股数据获取 ====================
+// ==================== A 股数据获取（新浪财经 API）====================
 
 // 获取单个股票数据（新浪财经 API）
 const fetchStockQuote = async (code) => {
     return new Promise((resolve) => {
-        // 使用 JSONP 方式绕过 CORS
         const script = document.createElement('script');
-        const callbackName = 'hq_str_' + code.replace('sh', '').replace('sz', '');
         
         // 设置超时
         const timeout = setTimeout(() => {
-            document.body.removeChild(script);
+            if (script.parentNode) {
+                document.body.removeChild(script);
+            }
             resolve(null);
         }, 3000);
         
         // 全局回调函数
+        const callbackName = 'hq_str_' + code.replace('sh', '').replace('sz', '');
         window[callbackName] = function() {
             clearTimeout(timeout);
-            document.body.removeChild(script);
+            if (script.parentNode) {
+                document.body.removeChild(script);
+            }
             delete window[callbackName];
             
-            // 从全局变量获取数据
-            const stockData = window['hq_str_' + code.replace('sh', '').replace('sz', '')];
-            if (stockData && typeof stockData === 'string') {
-                const parts = stockData.split(',');
+            const dataStr = window[callbackName];
+            if (dataStr && typeof dataStr === 'string') {
+                const parts = dataStr.split(',');
                 if (parts.length >= 32) {
                     const name = parts[0];
                     const currentPrice = parseFloat(parts[3]) || 0;
