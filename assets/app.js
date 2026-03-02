@@ -1,5 +1,5 @@
 // 贵金属行情中心 - 主应用程序
-// 版本：使用金投网 API + 修复时间显示和股票名称
+// 版本：使用 60s API (https://github.com/vikiboss/60s)
 
 // A 股数据配置（新浪财经 API）
 const STOCK_CONFIG = {
@@ -88,83 +88,75 @@ const updateCountdown = () => {
     countdownTimer = setInterval(updateDisplay, 1000);
 };
 
-// ==================== 贵金属数据获取（使用金投网 API）====================
+// ==================== 贵金属数据获取（使用 60s API）====================
 
-// 获取贵金属数据（金投网 API）
+// 获取贵金属数据（60s API - https://github.com/vikiboss/60s）
 const fetchPreciousMetals = async () => {
-    // 金投网 API 接口
-    const goldUrl = 'https://quote.cngold.org/gjsjs/hqjson?code=XAUGD&rn=' + Math.random();
-    const silverUrl = 'https://quote.cngold.org/gjsjs/hqjson?code=XAGGD&rn=' + Math.random();
-    const copperUrl = 'https://quote.cngold.org/yousejinshu/hqjson?code=LME3&rn=' + Math.random();
-    
     try {
-        const [goldData, silverData, copperData] = await Promise.all([
-            fetchCngoldData(goldUrl, 'gold'),
-            fetchCngoldData(silverUrl, 'silver'),
-            fetchCngoldData(copperUrl, 'copper')
-        ]);
+        // 使用 60s API 获取金价数据
+        const response = await fetch('https://60s.viki.moe/v2/gold-price');
+        const result = await response.json();
         
-        return {
-            gold: goldData,
-            silver: silverData,
-            copper: copperData
-        };
-    } catch (error) {
-        console.error('获取贵金属数据失败:', error);
-        return getMockPreciousMetals();
-    }
-};
-
-// 获取金投网数据
-const fetchCngoldData = async (url, type) => {
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data && data.list && data.list.length > 0) {
-            const item = data.list[0];
-            const price = parseFloat(item.price) || 0;
-            const openPrice = parseFloat(item.open || item.yestclose || price) || price;
+        if (result.code === 200 && result.data && result.data.metals) {
+            const metals = result.data.metals;
             
-            if (price > 0) {
-                return {
-                    price: price,
-                    change: {
-                        amount: price - openPrice,
-                        percent: ((price - openPrice) / openPrice) * 100
-                    },
-                    unit: '元/克',
-                    source: '金投网',
-                    time: item.time || ''
-                };
+            // 解析金价数据
+            let goldData = null;
+            let silverData = null;
+            
+            // 查找黄金价格（优先找黄金_T+D 或黄金_9999）
+            for (const metal of metals) {
+                if (metal.name.includes('黄金_T+D') || metal.name.includes('黄金_9999')) {
+                    goldData = metal;
+                    break;
+                }
             }
+            
+            // 如果没有找到 T+D 或 9999，使用今日金价
+            if (!goldData) {
+                goldData = metals.find(m => m.name === '今日金价') || metals[0];
+            }
+            
+            // 白银数据（如果没有，使用模拟数据）
+            silverData = metals.find(m => m.name.includes('白银'));
+            
+            return {
+                gold: parseMetalData(goldData, '黄金'),
+                silver: silverData ? parseMetalData(silverData, '白银') : getMockSilverPrice(),
+                copper: getMockCopperPrice()
+            };
         }
-    } catch (e) {
-        console.log(`${type} API 失败:`, e.message);
+    } catch (error) {
+        console.error('获取 60s API 数据失败:', error);
     }
     
-    // 备用模拟数据
-    return getMockPreciousMetal(type);
+    // API 失败时使用备用数据
+    return getMockPreciousMetals();
 };
 
-// 获取模拟贵金属数据（备用）
-const getMockPreciousMetals = () => {
-    return {
-        gold: getMockPreciousMetal('gold'),
-        silver: getMockPreciousMetal('silver'),
-        copper: getMockPreciousMetal('copper')
-    };
-};
-
-const getMockPreciousMetal = (type) => {
-    const basePrices = {
-        gold: 625.50,
-        silver: 7.85,
-        copper: 0.0695
-    };
-    const basePrice = basePrices[type] || 100;
-    const fluctuation = (Math.random() - 0.5) * (basePrice * 0.02);
+// 解析金属数据
+const parseMetalData = (data, defaultName) => {
+    if (!data) return null;
     
+    const todayPrice = parseFloat(data.today_price) || 0;
+    const lowPrice = parseFloat(data.low_price) || todayPrice;
+    
+    return {
+        price: todayPrice,
+        change: {
+            amount: todayPrice - lowPrice,
+            percent: ((todayPrice - lowPrice) / lowPrice) * 100
+        },
+        unit: data.unit || '元/克',
+        source: '60s API',
+        time: data.updated || ''
+    };
+};
+
+// 获取模拟白银价格（备用）
+const getMockSilverPrice = () => {
+    const basePrice = 7.85;
+    const fluctuation = (Math.random() - 0.5) * 0.15;
     return {
         price: basePrice + fluctuation,
         change: {
@@ -173,6 +165,38 @@ const getMockPreciousMetal = (type) => {
         },
         unit: '元/克',
         source: '参考数据'
+    };
+};
+
+// 获取模拟铜价格（备用）
+const getMockCopperPrice = () => {
+    const basePrice = 0.0695;
+    const fluctuation = (Math.random() - 0.5) * 0.001;
+    return {
+        price: basePrice + fluctuation,
+        change: {
+            amount: fluctuation,
+            percent: (fluctuation / basePrice) * 100
+        },
+        unit: '元/克',
+        source: '参考数据'
+    };
+};
+
+// 获取模拟贵金属数据（备用）
+const getMockPreciousMetals = () => {
+    return {
+        gold: {
+            price: 625.50 + (Math.random() - 0.5) * 10,
+            change: {
+                amount: (Math.random() - 0.5) * 5,
+                percent: (Math.random() - 0.5) * 0.8
+            },
+            unit: '元/克',
+            source: '参考数据'
+        },
+        silver: getMockSilverPrice(),
+        copper: getMockCopperPrice()
     };
 };
 
